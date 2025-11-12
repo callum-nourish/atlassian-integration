@@ -10,7 +10,8 @@
         "fmt": "npx prettier --write src/",
         "lint": "eslint --ignore-path ../../.eslintignore --ext .jsx,tsx,.js,.ts src/",
         "prettier-check": "npx prettier --check src/",
-        "version": "node version-bump.mjs && git add manifest.json versions.json"
+        "version": "node version-bump.mjs && git add manifest.json versions.json",
+        "postinstall": "patch-package"
     },
     "keywords": [],
     "author": "andymac4182",
@@ -18,7 +19,8 @@
     "devDependencies": {
         "@types/mime-types": "^2.1.1",
         "@types/react-dom": "^18.0.11",
-        "obsidian": "^1.1.1"
+        "obsidian": "^1.1.1",
+        "patch-package": "^8.0.1"
     },
     "dependencies": {
         "@markdown-confluence/lib": "^5.5.1",

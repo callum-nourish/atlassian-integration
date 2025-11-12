@@ -1,0 +1,16 @@
+diff --git a/node_modules/@markdown-confluence/lib/dist/MarkdownTransformer/index.js b/node_modules/@markdown-confluence/lib/dist/MarkdownTransformer/index.js
+index e822d3f..0b46faa 100644
+--- a/node_modules/@markdown-confluence/lib/dist/MarkdownTransformer/index.js
++++ b/node_modules/@markdown-confluence/lib/dist/MarkdownTransformer/index.js
+@@ -121,8 +121,9 @@ const mdToPmMapping = {
+     },
+ };
+ const md = MarkdownIt("commonmark", {
+-    html: false,
+-    linkify: true,
++	html: false,
++	linkify: true,
++	breaks: true,
+ });
+ md.enable([
+     // Process html entity - &#123;, &#xAF;, &quot;, ...

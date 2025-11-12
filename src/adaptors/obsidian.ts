@@ -14,6 +14,11 @@ import {
 } from "../backlinkUtils";
 import { lookup } from "mime-types";
 
+const collapseExtraNewlines = /\n{3,}/g;
+
+const escapeRegExp = (value: string): string =>
+	value.replace(/[.*+\\-?^${}()|[\]\\]/g, "\\$&");
+
 export default class ObsidianAdaptor implements LoaderAdaptor {
 	vault: Vault;
 	metadataCache: MetadataCache;
@@ -39,7 +44,7 @@ export default class ObsidianAdaptor implements LoaderAdaptor {
 		const enforceBacklink = normalizedKey.length > 0;
 		const folderToPublish = this.settings.folderToPublish?.trim() ?? "";
 		const files = this.vault.getMarkdownFiles();
-		const filesToPublish = [];
+		const filesToPublish: TFile[] = [];
 		for (const file of files) {
 			try {
 				if (file.path.endsWith(".excalidraw")) {
@@ -73,17 +78,28 @@ export default class ObsidianAdaptor implements LoaderAdaptor {
 				//ignore
 			}
 		}
-		const filesToUpload = [];
+		const filesToUpload: FilesToUpload = [];
 
 		for (const file of filesToPublish) {
-			const markdownFile = await this.loadMarkdownFile(file.path);
+			const rawContents = await this.vault.cachedRead(file);
 			if (
 				enforceBacklink &&
-				!fileContainsKeyBacklink(markdownFile.contents, normalizedKey)
+				!fileContainsKeyBacklink(rawContents, normalizedKey)
 			) {
 				continue;
 			}
-			filesToUpload.push(markdownFile);
+			filesToUpload.push(
+				this.createMarkdownFilePayload(
+					file,
+					this.stripRequiredBacklink(rawContents, normalizedKey),
+				),
+			);
+		}
+
+		if (!filesToUpload.length) {
+			throw new Error(
+				this.buildNoFilesMessage(folderToPublish, normalizedKey),
+			);
 		}
 
 		return filesToUpload;
@@ -95,6 +111,20 @@ export default class ObsidianAdaptor implements LoaderAdaptor {
 			throw new Error("Not a TFile");
 		}
 
+		const rawContents = await this.vault.cachedRead(file);
+		return this.createMarkdownFilePayload(
+			file,
+			this.stripRequiredBacklink(
+				rawContents,
+				normalizeBacklinkKey(this.settings.keyBacklink),
+			),
+		);
+	}
+
+	private createMarkdownFilePayload(
+		file: TFile,
+		contents: string,
+	): MarkdownFile {
 		const fileFM = this.metadataCache.getCache(file.path);
 		if (!fileFM) {
 			throw new Error("Missing File in Metadata Cache");
@@ -113,9 +143,56 @@ export default class ObsidianAdaptor implements LoaderAdaptor {
 			folderName: file.parent?.name ?? "",
 			absoluteFilePath: file.path,
 			fileName: file.name,
-			contents: await this.vault.cachedRead(file),
+			contents,
 			frontmatter: parsedFrontMatter,
 		};
+	}
+
+	private stripRequiredBacklink(
+		contents: string,
+		normalizedKey: string,
+	): string {
+		if (!normalizedKey) {
+			return contents;
+		}
+		const escapedKey = escapeRegExp(normalizedKey);
+		const backlinkPattern = new RegExp(
+			`\[\[\s*${escapedKey}(?:#[^|\]]+)?(?:\|[^\]]+)?\s*\]\]`,
+			"gi",
+		);
+		const withoutBacklink = contents
+			.replace(backlinkPattern, "")
+			.replace(collapseExtraNewlines, "\n\n")
+			.replace(/[ \t]+\n/g, "\n");
+		return withoutBacklink;
+	}
+
+	private buildNoFilesMessage(
+		folderToPublish: string,
+		normalizedKey: string,
+	): string {
+		const parts = [] as string[];
+		if (folderToPublish) {
+			parts.push(
+				`No markdown files were found inside "${folderToPublish}" that met the publish filters.`,
+			);
+		} else {
+			parts.push(
+				"No markdown files in your vault met the current publish filters.",
+			);
+		}
+
+		if (normalizedKey) {
+			parts.push(
+				`Each note must include [[${normalizedKey}]] (Required backlink key). Add it to at least one note or clear the setting to publish without it.`,
+			);
+		}
+
+		parts.push(
+			"You can also force a note to publish by adding 'connie-publish: true' to its YAML frontmatter.",
+		);
+
+		return parts.join(" ");
 	}
 
 	async readBinary(

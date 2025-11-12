@@ -522,6 +522,8 @@ export default class ConfluencePlugin extends Plugin {
 			await this.loadData(),
 		);
 		this.settings.keyBacklink = this.settings.keyBacklink ?? "";
+		this.settings.folderToPublish =
+			this.settings.folderToPublish?.trim() ?? "";
 		this.settings.backlinkPublishState =
 			this.settings.backlinkPublishState ?? {};
 	}

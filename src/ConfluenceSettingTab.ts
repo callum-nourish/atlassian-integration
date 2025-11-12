@@ -71,16 +71,16 @@ export class ConfluenceSettingTab extends PluginSettingTab {
 			);
 
 		new Setting(containerEl)
-			.setName("Folder to publish")
+			.setName("Folder to publish (optional)")
 			.setDesc(
-				"Publish all files except notes that are excluded using YAML Frontmatter",
+				"Limit publishing to a specific vault folder; leave blank to include every note and use frontmatter toggles instead.",
 			)
 			.addText((text) =>
 				text
-					.setPlaceholder("")
+					.setPlaceholder("e.g. Projects/Documentation")
 					.setValue(this.plugin.settings.folderToPublish)
 					.onChange(async (value) => {
-						this.plugin.settings.folderToPublish = value;
+						this.plugin.settings.folderToPublish = value.trim();
 						await this.plugin.saveSettings();
 					}),
 			);
