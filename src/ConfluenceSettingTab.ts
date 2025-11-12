@@ -15,7 +15,7 @@ export class ConfluenceSettingTab extends PluginSettingTab {
 		containerEl.empty();
 
 		containerEl.createEl("h2", {
-			text: "Settings for connecting to Atlassian Confluence",
+			text: "Confluence Settings",
 		});
 
 		new Setting(containerEl)

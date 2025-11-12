@@ -62,7 +62,7 @@ export default class ConfluencePlugin extends Plugin {
 	private confluenceClient!: ObsidianConfluenceClient;
 
 	activeLeafPath(workspace: Workspace) {
-		return workspace.getActiveViewOfType(MarkdownView)?.file.path;
+		return workspace.getActiveViewOfType(MarkdownView)?.file?.path;
 	}
 
 	async init() {
@@ -93,11 +93,11 @@ export default class ConfluencePlugin extends Plugin {
 			},
 			middlewares: {
 				onError(e) {
-					if ("response" in e && "data" in e.response) {
+					const response = (e as { response?: { data?: unknown } }).response;
+					if (response && "data" in response) {
+						const data = response.data;
 						e.message =
-							typeof e.response.data === "string"
-								? e.response.data
-								: JSON.stringify(e.response.data);
+							typeof data === "string" ? data : JSON.stringify(data);
 					}
 				},
 			},

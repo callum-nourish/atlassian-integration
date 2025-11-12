@@ -2,8 +2,9 @@
   "compilerOptions": {
     "baseUrl": ".",
     "rootDir": "src",
-    "outDir": "dist",
-    "declarationDir": "dist",
+	"outDir": "dist",
+	"declarationDir": "dist",
+	"declaration": true,
     "jsx": "react-jsx",
     "inlineSourceMap": true,
     "inlineSources": true,

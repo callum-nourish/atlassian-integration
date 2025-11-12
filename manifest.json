@@ -1,6 +1,6 @@
 {
 	"id": "confluence-integration",
-	"name": "Confluence Integration",
+	"name": "Atlassian Integration",
 	"version": "5.5.3",
 	"minAppVersion": "1.0.0",
 	"description": "This plugin allows you to publish your notes to Confluence",
