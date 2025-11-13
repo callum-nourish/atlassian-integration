@@ -5,7 +5,7 @@ Introduce a configurable "key backlink" (e.g. `[[atlassian]]`) that governs whic
 
 ## Functional Requirements
 - **Configurable key term** – Add a string field to plugin settings; default empty disables the feature. Persist it alongside existing Confluence settings and expose it via the settings tab UI.
-- **Eligibility filter** – During publish, scan each candidate file’s Markdown body (excluding frontmatter/metadata) for the literal `[[<key>]]` text. Reject files missing the backlink even if they are selected via `folderToPublish` or `connie-publish` flags.
+- **Eligibility filter** – During publish, scan each candidate file’s Markdown body (excluding frontmatter/metadata) for the literal `[[<key>]]` text. Reject files missing the backlink even if they are selected via `folderToPublish`.
 - **Folder mirroring** – When uploading eligible files, preserve their relative path from the vault root inside Confluence. Skip folders that would otherwise only contain ineligible notes to avoid empty stubs.
 - **De-publish on removal** – Track which Confluence page IDs originated from backlink-qualified notes. On each run, detect previously published pages whose source files no longer include the backlink and call the delete/unpublish API for those pages.
 - **Offline/local only** – Ensure scanning and filtering happens entirely client-side; do not transmit file contents unless the backlink rule passes.

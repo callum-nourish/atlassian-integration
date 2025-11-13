@@ -19,6 +19,8 @@ const collapseExtraNewlines = /\n{3,}/g;
 const escapeRegExp = (value: string): string =>
 	value.replace(/[.*+?^${}()|[\]\\-]/g, "\\$&");
 
+const CONFLUENCE_PAGE_ID_FIELD = "confluence-page-id";
+
 export default class ObsidianAdaptor implements LoaderAdaptor {
 	vault: Vault;
 	metadataCache: MetadataCache;
@@ -57,15 +59,6 @@ export default class ObsidianAdaptor implements LoaderAdaptor {
 				if (!fileFM) {
 					throw new Error("Missing File in Metadata Cache");
 				}
-				const frontMatter = fileFM.frontmatter;
-				const explicitPublish =
-					frontMatter && frontMatter["connie-publish"] === true;
-				const explicitExclude =
-					frontMatter && frontMatter["connie-publish"] === false;
-
-				if (explicitExclude) {
-					continue;
-				}
 
 				const rawContents = await this.vault.cachedRead(file);
 				const hasBacklink =
@@ -75,8 +68,7 @@ export default class ObsidianAdaptor implements LoaderAdaptor {
 					? file.path.startsWith(folderToPublish)
 					: false;
 
-				const shouldPublish =
-					explicitPublish || inFolder || hasBacklink;
+				const shouldPublish = inFolder || hasBacklink;
 				if (!shouldPublish) {
 					continue;
 				}
@@ -187,7 +179,7 @@ export default class ObsidianAdaptor implements LoaderAdaptor {
 		}
 
 		parts.push(
-			"You can also force a note to publish by adding 'connie-publish: true' to its YAML frontmatter.",
+			"Only notes inside the publish folder or containing the required wikilink will be uploaded.",
 		);
 
 		return parts.join(" ");
@@ -242,5 +234,17 @@ export default class ObsidianAdaptor implements LoaderAdaptor {
 				}
 			});
 		}
+	}
+
+	async clearConfluencePageId(absoluteFilePath: string): Promise<void> {
+		const file = this.app.vault.getAbstractFileByPath(absoluteFilePath);
+		if (!(file instanceof TFile)) {
+			return;
+		}
+		await this.app.fileManager.processFrontMatter(file, (fm) => {
+			if (fm[CONFLUENCE_PAGE_ID_FIELD]) {
+				delete fm[CONFLUENCE_PAGE_ID_FIELD];
+			}
+		});
 	}
 }

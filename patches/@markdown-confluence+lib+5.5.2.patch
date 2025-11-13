@@ -14,3 +14,16 @@ index e822d3f..0b46faa 100644
  });
  md.enable([
      // Process html entity - &#123;, &#xAF;, &quot;, ...
+diff --git a/node_modules/@markdown-confluence/lib/src/ConniePageConfig.ts b/node_modules/@markdown-confluence/lib/src/ConniePageConfig.ts
+index dbbe9b8..7fa37bf 100644
+--- a/node_modules/@markdown-confluence/lib/src/ConniePageConfig.ts
++++ b/node_modules/@markdown-confluence/lib/src/ConniePageConfig.ts
+@@ -196,7 +196,7 @@ export const conniePerPageConfig: ConfluencePerPageConfig = {
+ 		},
+ 	},
+ 	pageId: {
+-		key: "connie-page-id",
++		key: "confluence-page-id",
+ 		default: undefined,
+ 		inputType: "text",
+ 		inputValidator: (value) => {

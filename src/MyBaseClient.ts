@@ -165,9 +165,26 @@ export class MyBaseClient implements Client {
 			const responseHandler =
 				callbackResponseHandler ?? defaultResponseHandler;
 
-			this.config.middlewares?.onResponse?.(response.json);
+			const responseBodyText = response.text ?? "";
+			let parsedBody: T | undefined = undefined;
+			if (responseBodyText.length > 0) {
+				try {
+					parsedBody = response.json as T;
+				} catch (parseError) {
+					console.warn("Failed to parse Atlassian response as JSON", {
+						parseError,
+						response: {
+							status: response.status,
+							text: responseBodyText,
+						},
+					});
+					parsedBody = undefined;
+				}
+			}
 
-			return responseHandler(response.json);
+			this.config.middlewares?.onResponse?.(parsedBody);
+
+			return responseHandler(parsedBody as T);
 			// eslint-disable-next-line @typescript-eslint/no-explicit-any
 		} catch (e: any) {
 			console.warn({ httpError: e, requestConfig });

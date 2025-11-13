@@ -12,7 +12,7 @@ import { ElectronMermaidRenderer } from "@markdown-confluence/mermaid-electron-r
 import { ConfluenceSettingTab } from "./ConfluenceSettingTab";
 import ObsidianAdaptor from "./adaptors/obsidian";
 import { CompletedModal } from "./CompletedModal";
-import { ObsidianConfluenceClient } from "./MyBaseClient";
+import { ObsidianConfluenceClient, HTTPError } from "./MyBaseClient";
 import {
 	ConfluencePerPageForm,
 	ConfluencePerPageUIValues,
@@ -369,86 +369,6 @@ export default class ConfluencePlugin extends Plugin {
 		});
 
 		this.addCommand({
-			id: "enable-publishing",
-			name: "Enable publishing to Confluence",
-			editorCheckCallback: (checking, _editor, view) => {
-				if (!view.file) {
-					return false;
-				}
-
-				if (checking) {
-					const frontMatter = this.app.metadataCache.getCache(
-						view.file.path,
-					)?.frontmatter;
-					const file = view.file;
-					const enabledForPublishing =
-						(file.path.startsWith(this.settings.folderToPublish) &&
-							(!frontMatter ||
-								frontMatter["connie-publish"] !== false)) ||
-						(frontMatter && frontMatter["connie-publish"] === true);
-					return !enabledForPublishing;
-				}
-
-				this.app.fileManager.processFrontMatter(
-					view.file,
-					(frontmatter) => {
-						if (
-							view.file &&
-							view.file.path.startsWith(
-								this.settings.folderToPublish,
-							)
-						) {
-							delete frontmatter["connie-publish"];
-						} else {
-							frontmatter["connie-publish"] = true;
-						}
-					},
-				);
-				return true;
-			},
-		});
-
-		this.addCommand({
-			id: "disable-publishing",
-			name: "Disable publishing to Confluence",
-			editorCheckCallback: (checking, _editor, view) => {
-				if (!view.file) {
-					return false;
-				}
-
-				if (checking) {
-					const frontMatter = this.app.metadataCache.getCache(
-						view.file.path,
-					)?.frontmatter;
-					const file = view.file;
-					const enabledForPublishing =
-						(file.path.startsWith(this.settings.folderToPublish) &&
-							(!frontMatter ||
-								frontMatter["connie-publish"] !== false)) ||
-						(frontMatter && frontMatter["connie-publish"] === true);
-					return enabledForPublishing;
-				}
-
-				this.app.fileManager.processFrontMatter(
-					view.file,
-					(frontmatter) => {
-						if (
-							view.file &&
-							view.file.path.startsWith(
-								this.settings.folderToPublish,
-							)
-						) {
-							frontmatter["connie-publish"] = false;
-						} else {
-							delete frontmatter["connie-publish"];
-						}
-					},
-				);
-				return true;
-			},
-		});
-
-		this.addCommand({
 			id: "page-settings",
 			name: "Update Confluence Page Settings",
 			editorCallback: (_editor, view) => {
@@ -467,9 +387,12 @@ export default class ConfluencePlugin extends Plugin {
 					initialValues:
 						mapFrontmatterToConfluencePerPageUIValues(frontMatter),
 					onSubmit: (values, close) => {
-						const valuesToSet: Partial<ConfluencePageConfig.ConfluencePerPageAllValues> =
-							{};
-						for (const propertyKey in values) {
+					const valuesToSet: Partial<ConfluencePageConfig.ConfluencePerPageAllValues> =
+						{};
+					for (const propertyKey in values) {
+						if (propertyKey === "publish") {
+							continue;
+						}
 							if (
 								Object.prototype.hasOwnProperty.call(
 									values,
@@ -527,10 +450,6 @@ export default class ConfluencePlugin extends Plugin {
 		return normalizeBacklinkKey(this.settings.keyBacklink);
 	}
 
-	private shouldEnforceBacklinkRequirement(): boolean {
-		return this.getNormalizedBacklinkKey().length > 0;
-	}
-
 	private ensureBacklinkState(): Record<string, string> {
 		if (!this.settings.backlinkPublishState) {
 			this.settings.backlinkPublishState = {};
@@ -569,11 +488,13 @@ export default class ConfluencePlugin extends Plugin {
 				delete state[path];
 				stats.deletedPaths.push(path);
 				mutated = true;
+				await this.adaptor.clearConfluencePageId(path);
 			} catch (error) {
 				if (this.isConfluenceNotFound(error)) {
 					delete state[path];
 					stats.deletedPaths.push(path);
 					mutated = true;
+					await this.adaptor.clearConfluencePageId(path);
 					continue;
 				}
 				const reason =
@@ -634,6 +555,9 @@ export default class ConfluencePlugin extends Plugin {
 	private isConfluenceNotFound(error: unknown): boolean {
 		if (!error) {
 			return false;
+		}
+		if (error instanceof HTTPError) {
+			return error.response.status === 404;
 		}
 		const maybeError = error as {
 			statusCode?: number;

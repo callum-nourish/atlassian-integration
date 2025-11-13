@@ -13,6 +13,8 @@ export type ConfluencePerPageUIValues = {
 	};
 };
 
+const OMITTED_CONFIG_KEYS = new Set(["publish"]);
+
 export function mapFrontmatterToConfluencePerPageUIValues(
 	frontmatter: FrontMatterCache | undefined,
 ): ConfluencePerPageUIValues {
@@ -24,6 +26,9 @@ export function mapFrontmatterToConfluencePerPageUIValues(
 	}
 
 	for (const propertyKey in config) {
+		if (propertyKey === "publish") {
+			continue;
+		}
 		if (config.hasOwnProperty(propertyKey)) {
 			const {
 				key,
@@ -438,7 +443,10 @@ const ConfluenceForm: React.FC<FormProps> = ({
 				</tr>
 				</thead>
 				<tbody>
-				{Object.entries(config).map(([key, config]: [string, any]) => {
+		{Object.entries(config).map(([key, config]: [string, any]) => {
+				if (OMITTED_CONFIG_KEYS.has(key)) {
+					return null;
+				}
 					switch (config.inputType) {
 						case "text":
 							return renderTextInput(

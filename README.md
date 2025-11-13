@@ -46,20 +46,10 @@ Use the command palette (`Ctrl/Cmd + P`) to execute the "Publish All to Confluen
 
 ![Commands](./docs/screenshots/commands.png)
 
-### connie-publish Frontmatter
-
-To publish pages outside the `folderToPublish`, add the `connie-publish` YAML frontmatter to your notes:
-
-```yaml
----
-connie-publish: true
----
-```
-
 ### Example Workflow
 1. Install and configure the `atlassian-integration` plugin.
 2. Create a folder in your Obsidian vault named "Confluence Pages" (or the folder name you specified in the settings).
-3. Add notes to this folder or add the connie-publish frontmatter to other notes.
+3. Add notes to this folder or add the configured wikilink (e.g. `[[atlassian]]`) anywhere in the note body to publish from outside the folder.
 4. Click the cloud icon in the ribbon or use the "Publish All to Confluence" command to publish your notes to Confluence.
 
 ### Contributing
