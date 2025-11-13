@@ -18,16 +18,26 @@ Copyright (c) 2022 Atlassian US, Inc.
 ## Issues
 Please log issues to https://github.com/markdown-confluence/markdown-confluence/issues as this is where the code is being developed. 
 
+## Installation (via BRAT)
+
+The plugin is currently distributed through the community-maintained **Beta Reviewers Auto-update Tester (BRAT)** plugin.
+
+1. Install and enable BRAT from Obsidian's community plugins browser.
+2. In BRAT's settings, choose **Add Beta plugin** and enter this repository URL (`callummclennan/obsidian-confluence`).
+3. BRAT will download the latest build and keep it updated; enable `Atlassian Integration` when prompted.
+
+Alternatively, download the latest `atlassian-integration.zip` from the [Releases](./release/) folder and drop the extracted plugin into `.obsidian/plugins/`.
+
 ## Getting Started
 
-1. Install the `atlassian-integration` plugin from Obsidian's community plugins browser.
-2. Open the plugin settings and configure the following fields:
+Once installed, open **Settings → Community Plugins → Atlassian Integration** and configure:
 
 - `Confluence Base URL`: The base URL of your Atlassian Confluence instance (e.g., `https://your-domain.atlassian.net`)
 - `Confluence Parent Id`: The Confluence page ID where your notes will be published as child pages
 - `Atlassian User Name`: Your Atlassian account's email address
 - `Atlassian API Token`: Your Atlassian API token. You can generate one from your [Atlassian Account Settings](https://id.atlassian.com/manage-profile/security/api-tokens).
 - `Folder To Publish`: The name of the folder in Obsidian containing the notes you want to publish (default: "Confluence Pages")
+- `Required Wikilink`: Optional wikilink (default `[[atlassian]]`) that, when present in a note, marks it for publishing even if it lives outside the folder. You can set a custom value in the plugin settings.
 
 ![Settings](./docs/screenshots/settings.png)
 
@@ -49,8 +59,15 @@ Use the command palette (`Ctrl/Cmd + P`) to execute the "Publish All to Confluen
 ### Example Workflow
 1. Install and configure the `atlassian-integration` plugin.
 2. Create a folder in your Obsidian vault named "Confluence Pages" (or the folder name you specified in the settings).
-3. Add notes to this folder or add the configured wikilink (e.g. `[[atlassian]]`) anywhere in the note body to publish from outside the folder.
+3. Add notes to this folder or include the configured wikilink (default `[[atlassian]]`) anywhere in the note body to publish from outside the folder.
 4. Click the cloud icon in the ribbon or use the "Publish All to Confluence" command to publish your notes to Confluence.
+
+### Wikilink Publishing Cheat Sheet
+
+- Set your preferred wikilink key under **Settings → Atlassian Integration → Required Wikilink** (default is `atlassian`).
+- Any note containing `[[<your-key>]]` will be considered for publishing even if it lives outside the configured folder.
+- Notes inside the publish folder still upload without the wikilink; the link simply opts external notes in.
+- The plugin strips the helper wikilink before sending content to Confluence, so it never appears on the final page.
 
 ### Contributing
 Contributions are welcome! If you have a feature request, bug report, or want to improve the plugin, please open an issue or submit a pull request on the GitHub repository.
