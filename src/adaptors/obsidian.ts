@@ -17,7 +17,7 @@ import { lookup } from "mime-types";
 const collapseExtraNewlines = /\n{3,}/g;
 
 const escapeRegExp = (value: string): string =>
-	value.replace(/[.*+\\-?^${}()|[\]\\]/g, "\\$&");
+	value.replace(/[.*+?^${}()|[\]\\-]/g, "\\$&");
 
 export default class ObsidianAdaptor implements LoaderAdaptor {
 	vault: Vault;
