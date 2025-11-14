@@ -1,4 +1,13 @@
-import { Plugin, Notice, MarkdownView, Workspace, loadMermaid } from "obsidian";
+import {
+	Plugin,
+	Notice,
+	MarkdownView,
+	Workspace,
+	loadMermaid,
+	TAbstractFile,
+	TFile,
+} from "obsidian";
+import SparkMD5 from "spark-md5";
 import {
 	ConfluenceUploadSettings,
 	Publisher,
@@ -33,6 +42,13 @@ export interface ObsidianPluginSettings
 		| "forest";
 	keyBacklink: string;
 	backlinkPublishState: Record<string, string>;
+	liveSyncEnabled: boolean;
+	liveSyncDebounceSeconds: number;
+	liveSyncStrategy: "on-save" | "interval" | "both";
+	liveSyncIntervalMinutes: number;
+	orphanCleanupIntervalHours: number;
+	lastOrphanCleanupTs?: number;
+	liveSyncHashes: Record<string, string>;
 }
 
 interface FailedFile {
@@ -56,6 +72,11 @@ interface BacklinkCleanupStats {
 export default class ConfluencePlugin extends Plugin {
 	settings!: ObsidianPluginSettings;
 	private isSyncing = false;
+	private liveSyncQueue = new Set<string>();
+	private liveSyncTimeout: number | null = null;
+	private liveSyncListenerRegistered = false;
+	private liveSyncIntervalId: number | null = null;
+	private statusBarEl: HTMLElement | null = null;
 	workspace!: Workspace;
 	publisher!: Publisher;
 	adaptor!: ObsidianAdaptor;
@@ -110,6 +131,10 @@ export default class ConfluencePlugin extends Plugin {
 			this.confluenceClient,
 			[new MermaidRendererPlugin(mermaidRenderer)],
 		);
+
+		this.ensureLiveSyncListener();
+		this.syncLiveSyncRuntimeState();
+		void this.maybeRunOrphanCleanup();
 	}
 
 	async getMermaidItems() {
@@ -183,15 +208,23 @@ export default class ConfluencePlugin extends Plugin {
 		};
 	}
 
-	async doPublish(publishFilter?: string): Promise<UploadResults> {
+	async doPublish(
+		publishFilter?: string,
+		options?: { skipCleanup?: boolean },
+	): Promise<UploadResults> {
 		const adrFiles = await this.publisher.publish(publishFilter);
 
-		const eligiblePaths = new Set(
-			adrFiles.map((fileResult) => fileResult.node.file.absoluteFilePath),
+		const shouldCleanup = !(
+			options?.skipCleanup ?? Boolean(publishFilter)
 		);
-		const cleanupStats = await this.removeBacklinkOrphans(eligiblePaths);
+		if (shouldCleanup) {
+			const eligiblePaths = new Set(
+				adrFiles.map((fileResult) => fileResult.node.file.absoluteFilePath),
+			);
+			const cleanupStats = await this.removeBacklinkOrphans(eligiblePaths);
+			this.notifyBacklinkCleanup(cleanupStats);
+		}
 		await this.updateBacklinkState(adrFiles);
-		this.notifyBacklinkCleanup(cleanupStats);
 
 		const returnVal: UploadResults = {
 			errorMessage: null,
@@ -218,6 +251,7 @@ export default class ConfluencePlugin extends Plugin {
 
 	override async onload() {
 		await this.init();
+		this.setupStatusBar();
 
 		this.addRibbonIcon("cloud", "Publish to Confluence", async () => {
 			if (this.isSyncing) {
@@ -424,13 +458,25 @@ export default class ConfluencePlugin extends Plugin {
 		this.addSettingTab(new ConfluenceSettingTab(this.app, this));
 	}
 
-	override async onunload() {}
+	override async onunload() {
+		this.clearLiveSyncQueue();
+		this.clearIntervalSyncTask();
+		this.statusBarEl?.remove();
+		this.statusBarEl = null;
+	}
 
 	async loadSettings() {
 		this.settings = Object.assign(
 			{},
 			ConfluenceUploadSettings.DEFAULT_SETTINGS,
-			{ mermaidTheme: "match-obsidian" },
+			{
+				mermaidTheme: "match-obsidian",
+				liveSyncEnabled: false,
+				liveSyncDebounceSeconds: 5,
+				liveSyncStrategy: "on-save",
+				liveSyncIntervalMinutes: 30,
+				orphanCleanupIntervalHours: 24,
+			},
 			{ keyBacklink: "", backlinkPublishState: {} },
 			await this.loadData(),
 		);
@@ -439,6 +485,25 @@ export default class ConfluencePlugin extends Plugin {
 			this.settings.folderToPublish?.trim() ?? "";
 		this.settings.backlinkPublishState =
 			this.settings.backlinkPublishState ?? {};
+		this.settings.liveSyncHashes = this.settings.liveSyncHashes ?? {};
+		this.settings.liveSyncEnabled = this.settings.liveSyncEnabled ?? false;
+		this.settings.liveSyncDebounceSeconds =
+			this.settings.liveSyncDebounceSeconds ?? 5;
+		this.settings.liveSyncStrategy =
+			(this.settings.liveSyncStrategy as
+				| "on-save"
+				| "interval"
+				| "both") ?? "on-save";
+		this.settings.liveSyncIntervalMinutes = Math.max(
+			1,
+			this.settings.liveSyncIntervalMinutes ?? 30,
+		);
+		this.settings.orphanCleanupIntervalHours = Math.max(
+			1,
+			this.settings.orphanCleanupIntervalHours ?? 24,
+		);
+		this.settings.lastOrphanCleanupTs =
+			this.settings.lastOrphanCleanupTs ?? 0;
 	}
 
 	async saveSettings() {
@@ -532,6 +597,331 @@ export default class ConfluencePlugin extends Plugin {
 		if (mutated) {
 			await this.saveData(this.settings);
 		}
+	}
+
+	private ensureLiveSyncListener() {
+		if (this.liveSyncListenerRegistered) {
+			return;
+		}
+		this.registerEvent(
+			this.app.vault.on("modify", (file) => {
+				void this.onVaultFileModified(file);
+			}),
+		);
+		this.liveSyncListenerRegistered = true;
+	}
+
+	private syncLiveSyncRuntimeState() {
+		if (!this.settings.liveSyncEnabled) {
+			this.clearLiveSyncQueue();
+			this.clearIntervalSyncTask();
+			this.updateStatusBar("idle");
+			return;
+		}
+		if (!this.shouldUseOnSaveSync()) {
+			this.clearLiveSyncQueue();
+		}
+		this.ensureIntervalSyncTask();
+	}
+
+	private clearLiveSyncQueue() {
+		this.liveSyncQueue.clear();
+		if (this.liveSyncTimeout !== null) {
+			window.clearTimeout(this.liveSyncTimeout);
+			this.liveSyncTimeout = null;
+		}
+		if (!this.isSyncing) {
+			this.updateStatusBar("idle");
+		}
+	}
+
+	private async onVaultFileModified(file: TAbstractFile) {
+		if (!this.settings.liveSyncEnabled || !this.shouldUseOnSaveSync()) {
+			return;
+		}
+		if (!(file instanceof TFile)) {
+			return;
+		}
+		if (file.extension !== "md") {
+			return;
+		}
+		if (!this.isFileEligibleForLiveSync(file)) {
+			return;
+		}
+		this.liveSyncQueue.add(file.path);
+		this.updateStatusBar("pending", this.liveSyncQueue.size);
+		this.scheduleLiveSync();
+	}
+
+	private isFileEligibleForLiveSync(file: TFile): boolean {
+		const folderFilter = this.settings.folderToPublish?.trim() ?? "";
+		const normalizedFolder = folderFilter.replace(/\/+$/, "");
+		const folderFilterActive = normalizedFolder.length > 0;
+		const normalizedKey = this.getNormalizedBacklinkKey();
+		const backlinkFilterActive = normalizedKey.length > 0;
+
+		const isInFolder = folderFilterActive
+			? file.path === normalizedFolder ||
+			  file.path.startsWith(`${normalizedFolder}/`)
+			: false;
+
+		if (folderFilterActive && isInFolder) {
+			return true;
+		}
+
+		if (folderFilterActive && !backlinkFilterActive) {
+			return false;
+		}
+
+		if (!folderFilterActive && !backlinkFilterActive) {
+			return true;
+		}
+
+		if (!backlinkFilterActive) {
+			return true;
+		}
+
+		const cache = this.app.metadataCache.getFileCache(file);
+		if (!cache) {
+			return false;
+		}
+		const normalizedNeedle = normalizedKey.toLowerCase();
+		const matchesLinks =
+			cache.links?.some((link) =>
+				normalizeBacklinkKey(link.link ?? "").toLowerCase() ===
+				normalizedNeedle,
+			) ?? false;
+		if (matchesLinks) {
+			return true;
+		}
+		const matchesEmbeds =
+			cache.embeds?.some((embed) =>
+				normalizeBacklinkKey(embed.link ?? "").toLowerCase() ===
+				normalizedNeedle,
+			) ?? false;
+		return matchesEmbeds;
+	}
+
+	private scheduleLiveSync(delayOverride?: number) {
+		if (this.liveSyncTimeout !== null) {
+			window.clearTimeout(this.liveSyncTimeout);
+		}
+		const seconds = delayOverride ?? this.settings.liveSyncDebounceSeconds ?? 5;
+		const delay = Math.max(0, seconds) * 1000;
+		this.liveSyncTimeout = window.setTimeout(() => {
+			this.liveSyncTimeout = null;
+			void this.flushLiveSyncQueue();
+		}, delay);
+	}
+
+	private async flushLiveSyncQueue() {
+		if (!this.settings.liveSyncEnabled) {
+			this.clearLiveSyncQueue();
+			return;
+		}
+		if (this.liveSyncQueue.size === 0) {
+			await this.maybeRunOrphanCleanup();
+			if (!this.isSyncing) {
+				this.updateStatusBar("idle");
+			}
+			return;
+		}
+		if (this.isSyncing) {
+			this.scheduleLiveSync();
+			return;
+		}
+		const queuedPaths = Array.from(this.liveSyncQueue);
+		this.liveSyncQueue.clear();
+		const targets: { path: string; hash: string }[] = [];
+		for (const path of queuedPaths) {
+			const currentHash = await this.computeFileHash(path);
+			if (!currentHash) {
+				continue;
+			}
+			if (this.settings.liveSyncHashes?.[path] === currentHash) {
+				continue;
+			}
+			targets.push({ path, hash: currentHash });
+		}
+		if (!targets.length) {
+			await this.maybeRunOrphanCleanup();
+			this.updateStatusBar("idle");
+			return;
+		}
+		this.isSyncing = true;
+		this.updateStatusBar("syncing", targets.length);
+		try {
+			let hashesUpdated = false;
+			for (const target of targets) {
+				try {
+					const result = await this.doPublish(target.path, {
+						skipCleanup: true,
+					});
+					if (result.failedFiles.length === 0) {
+						this.settings.liveSyncHashes[target.path] = target.hash;
+						hashesUpdated = true;
+					}
+				} catch (error) {
+					const message =
+						error instanceof Error
+							? error.message
+							: "Unknown error";
+					new Notice(`Live sync failed: ${message}`);
+					console.error("Live sync publish failed", error);
+				}
+			}
+			if (hashesUpdated) {
+				await this.saveData(this.settings);
+			}
+		} finally {
+			this.isSyncing = false;
+			if (this.liveSyncQueue.size === 0) {
+				this.updateStatusBar("idle");
+			}
+			await this.maybeRunOrphanCleanup();
+		}
+	}
+
+	private async computeFileHash(path: string): Promise<string | null> {
+		const file = this.app.vault.getAbstractFileByPath(path);
+		if (!(file instanceof TFile)) {
+			return null;
+		}
+		try {
+			const contents = await this.app.vault.read(file);
+			return SparkMD5.hash(contents);
+		} catch (error) {
+			console.error("Failed to hash file for live sync", { path, error });
+			return null;
+		}
+	}
+
+	private setupStatusBar() {
+		if (!this.statusBarEl) {
+			this.statusBarEl = this.addStatusBarItem();
+		}
+		this.updateStatusBar("idle");
+	}
+
+	private updateStatusBar(
+		state: "idle" | "pending" | "syncing",
+		detail?: number,
+	) {
+		if (!this.statusBarEl) {
+			return;
+		}
+		let label = "Confluence: Idle";
+		switch (state) {
+			case "pending":
+				label = `Confluence: Pending${detail ? ` (${detail})` : ""}`;
+				break;
+			case "syncing":
+				label = `Confluence: Syncing${detail ? ` (${detail})` : ""}`;
+				break;
+			default:
+				label = "Confluence: Idle";
+		}
+		this.statusBarEl.setText(label);
+	}
+
+	private shouldUseOnSaveSync(): boolean {
+		if (!this.settings.liveSyncEnabled) {
+			return false;
+		}
+		const strategy = this.settings.liveSyncStrategy ?? "on-save";
+		return strategy === "on-save" || strategy === "both";
+	}
+
+	private shouldUseIntervalSync(): boolean {
+		if (!this.settings.liveSyncEnabled) {
+			return false;
+		}
+		const strategy = this.settings.liveSyncStrategy ?? "on-save";
+		return strategy === "interval" || strategy === "both";
+	}
+
+	private ensureIntervalSyncTask() {
+		this.clearIntervalSyncTask();
+		if (!this.shouldUseIntervalSync()) {
+			return;
+		}
+		const minutes = Math.max(1, this.settings.liveSyncIntervalMinutes ?? 30);
+		const intervalMs = minutes * 60 * 1000;
+		const intervalId = window.setInterval(() => {
+			void this.handleIntervalSyncTick();
+		}, intervalMs);
+		this.liveSyncIntervalId = intervalId;
+		this.registerInterval(intervalId);
+	}
+
+	private clearIntervalSyncTask() {
+		if (this.liveSyncIntervalId !== null) {
+			window.clearInterval(this.liveSyncIntervalId);
+			this.liveSyncIntervalId = null;
+		}
+	}
+
+	private async handleIntervalSyncTick() {
+		if (!this.shouldUseIntervalSync()) {
+			return;
+		}
+		const eligiblePaths = this.collectEligibleLiveSyncPaths();
+		if (eligiblePaths.length) {
+			for (const path of eligiblePaths) {
+				this.liveSyncQueue.add(path);
+			}
+			this.updateStatusBar("pending", this.liveSyncQueue.size);
+			await this.flushLiveSyncQueue();
+		} else {
+			await this.maybeRunOrphanCleanup();
+		}
+		this.pruneMissingLiveSyncHashes();
+	}
+
+	private collectEligibleLiveSyncPaths(): string[] {
+		return this.app.vault
+			.getMarkdownFiles()
+			.filter((file) => this.isFileEligibleForLiveSync(file))
+			.map((file) => file.path);
+	}
+
+	private pruneMissingLiveSyncHashes() {
+		const hashes = this.settings.liveSyncHashes;
+		let mutated = false;
+		for (const path of Object.keys(hashes)) {
+			const file = this.app.vault.getAbstractFileByPath(path);
+			if (!file) {
+				delete hashes[path];
+				mutated = true;
+			}
+		}
+		if (mutated) {
+			void this.saveData(this.settings);
+		}
+	}
+
+	private async maybeRunOrphanCleanup(force = false) {
+		const intervalHours = Math.max(
+			1,
+			this.settings.orphanCleanupIntervalHours ?? 24,
+		);
+		const intervalMs = intervalHours * 60 * 60 * 1000;
+		const last = this.settings.lastOrphanCleanupTs ?? 0;
+		const now = Date.now();
+		if (!force && now - last < intervalMs) {
+			return;
+		}
+		const eligiblePaths = new Set(this.collectEligibleLiveSyncPaths());
+		const stats = await this.removeBacklinkOrphans(eligiblePaths);
+		if (stats.deletedPaths.length || stats.failedDeletions.length) {
+			this.notifyBacklinkCleanup(stats);
+		}
+		this.settings.lastOrphanCleanupTs = now;
+		await this.saveData(this.settings);
+	}
+
+	async runOrphanCleanupNow() {
+		await this.maybeRunOrphanCleanup(true);
 	}
 
 	private notifyBacklinkCleanup(stats: BacklinkCleanupStats) {

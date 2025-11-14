@@ -13,6 +13,7 @@ Copyright (c) 2022 Atlassian US, Inc.
 - Publish Obsidian notes to Atlassian Confluence
 - Support for Obsidian markdown extensions
 - CLI for pushing markdown files from disk
+- Optional live sync (on-save or scheduled) plus automatic orphan cleanup
 - Commands and ribbon icon for easy access
 
 ## Issues
@@ -61,6 +62,18 @@ Use the command palette (`Ctrl/Cmd + P`) to execute the "Publish All to Confluen
 2. Create a folder in your Obsidian vault named "Confluence Pages" (or the folder name you specified in the settings).
 3. Add notes to this folder or include the configured wikilink (default `[[atlassian]]`) anywhere in the note body to publish from outside the folder.
 4. Click the cloud icon in the ribbon or use the "Publish All to Confluence" command to publish your notes to Confluence.
+
+### Live Sync (optional)
+
+- Head to **Settings → Atlassian Integration** and enable **Live sync** to auto-publish notes either when you save them or on an interval (or both).
+- Choose the trigger mode (Save / Schedule / Save + Schedule) and set the delay/interval sliders. Scheduled runs can be stretched up to 4 hours to keep Atlassian API usage in check.
+- Only notes that pass your folder + wikilink filters are synced, and the plugin hashes files so unchanged notes are skipped.
+- Background sync notices appear in the status bar so you always know when an upload is queued or running.
+
+### Orphan cleanup
+
+- The plugin automatically removes Confluence pages whose source files were deleted. Tweak the cadence under **Orphan cleanup cadence** (default every 24 hours).
+- Hit the **Run now** button in settings any time you want to immediately prune stale pages.
 
 ### Wikilink Publishing Cheat Sheet
 
