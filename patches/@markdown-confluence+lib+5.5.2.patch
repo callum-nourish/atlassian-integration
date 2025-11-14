@@ -1,3 +1,43 @@
+diff --git a/node_modules/@markdown-confluence/lib/dist/ADFProcessingPlugins/ImageUploaderPlugin.js b/node_modules/@markdown-confluence/lib/dist/ADFProcessingPlugins/ImageUploaderPlugin.js
+index 82e1d06..0330300 100644
+--- a/node_modules/@markdown-confluence/lib/dist/ADFProcessingPlugins/ImageUploaderPlugin.js
++++ b/node_modules/@markdown-confluence/lib/dist/ADFProcessingPlugins/ImageUploaderPlugin.js
+@@ -1,5 +1,7 @@
+ import { filter, traverse } from "@atlaskit/adf-utils/traverse";
+ import { p } from "@atlaskit/adf-utils/builders";
++const IMAGE_MEDIA_WIDTH_PERCENT = 95;
++const IMAGE_WIDTH_CLAMP_THRESHOLD_PX = 900;
+ export const ImageUploaderPlugin = {
+     extract(adf) {
+         const mediaNodes = filter(adf, (node) => node.type === "media" &&
+@@ -50,10 +52,25 @@ export const ImageUploaderPlugin = {
+                     if (!node || !node.content) {
+                         return;
+                     }
+-                    if (node.content.at(0)?.attrs?.["url"] !== undefined &&
+-                        (node.content.at(0)?.attrs?.["url"]).startsWith("file://")) {
++                    const mediaNode = node.content.at(0);
++                    const mediaUrl = mediaNode?.attrs?.["url"];
++                    if (mediaUrl !== undefined && mediaUrl.startsWith("file://")) {
+                         return p("Invalid Image Path");
+                     }
++                    if ((mediaNode?.attrs?.["type"]) === "file") {
++                        const mediaWidthPx = mediaNode?.attrs?.["width"];
++                        const shouldClamp = typeof mediaWidthPx === "number" && mediaWidthPx > IMAGE_WIDTH_CLAMP_THRESHOLD_PX;
++                        node.attrs = node.attrs ?? {};
++                        if (shouldClamp) {
++                            if (!node.attrs["layout"]) {
++                                node.attrs["layout"] = "center";
++                            }
++                            node.attrs["width"] = IMAGE_MEDIA_WIDTH_PERCENT;
++                        }
++                        else if (node.attrs["width"]) {
++                            delete node.attrs["width"];
++                        }
++                    }
+                     return;
+                 },
+             }) || afterAdf;
 diff --git a/node_modules/@markdown-confluence/lib/dist/ADFProcessingPlugins/MermaidRendererPlugin.js b/node_modules/@markdown-confluence/lib/dist/ADFProcessingPlugins/MermaidRendererPlugin.js
 index d7e6ced..1d1cbfe 100644
 --- a/node_modules/@markdown-confluence/lib/dist/ADFProcessingPlugins/MermaidRendererPlugin.js
@@ -35,6 +75,56 @@ index e822d3f..0b46faa 100644
  });
  md.enable([
      // Process html entity - &#123;, &#xAF;, &quot;, ...
+diff --git a/node_modules/@markdown-confluence/lib/src/ADFProcessingPlugins/ImageUploaderPlugin.ts b/node_modules/@markdown-confluence/lib/src/ADFProcessingPlugins/ImageUploaderPlugin.ts
+index 7a6f6c1..a3591b2 100644
+--- a/node_modules/@markdown-confluence/lib/src/ADFProcessingPlugins/ImageUploaderPlugin.ts
++++ b/node_modules/@markdown-confluence/lib/src/ADFProcessingPlugins/ImageUploaderPlugin.ts
+@@ -5,6 +5,9 @@ import { ADFEntity } from "@atlaskit/adf-utils/dist/types/types";
+ import { p } from "@atlaskit/adf-utils/builders";
+ import { ADFProcessingPlugin, PublisherFunctions } from "./types";
+ 
++const IMAGE_MEDIA_WIDTH_PERCENT = 95;
++const IMAGE_WIDTH_CLAMP_THRESHOLD_PX = 900;
++
+ export const ImageUploaderPlugin: ADFProcessingPlugin<
+ 	string[],
+ 	Record<string, UploadedImageData | null>
+@@ -79,14 +82,31 @@ export const ImageUploaderPlugin: ADFProcessingPlugin<
+ 					if (!node || !node.content) {
+ 						return;
+ 					}
++
++					const mediaNode = node.content.at(0);
++					const mediaUrl = mediaNode?.attrs?.["url"];
+ 					if (
+-						node.content.at(0)?.attrs?.["url"] !== undefined &&
+-						(
+-							node.content.at(0)?.attrs?.["url"] as string
+-						).startsWith("file://")
++						mediaUrl !== undefined &&
++						(mediaUrl as string).startsWith("file://")
+ 					) {
+ 						return p("Invalid Image Path");
+ 					}
++
++					if (mediaNode?.attrs?.["type"] === "file") {
++						const mediaWidthPx = mediaNode?.attrs?.["width"];
++						const shouldClamp =
++							typeof mediaWidthPx === "number" &&
++							mediaWidthPx > IMAGE_WIDTH_CLAMP_THRESHOLD_PX;
++						node.attrs = node.attrs ?? {};
++						if (shouldClamp) {
++							if (!node.attrs["layout"]) {
++								node.attrs["layout"] = "center";
++							}
++							node.attrs["width"] = IMAGE_MEDIA_WIDTH_PERCENT;
++						} else if (node.attrs["width"]) {
++							delete node.attrs["width"];
++						}
++					}
+ 					return;
+ 				},
+ 			}) || afterAdf;
 diff --git a/node_modules/@markdown-confluence/lib/src/ADFProcessingPlugins/MermaidRendererPlugin.ts b/node_modules/@markdown-confluence/lib/src/ADFProcessingPlugins/MermaidRendererPlugin.ts
 index 2e2b3de..4dbfc20 100644
 --- a/node_modules/@markdown-confluence/lib/src/ADFProcessingPlugins/MermaidRendererPlugin.ts

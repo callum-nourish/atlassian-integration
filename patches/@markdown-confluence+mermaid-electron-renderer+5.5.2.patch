@@ -1,8 +1,8 @@
 diff --git a/node_modules/@markdown-confluence/mermaid-electron-renderer/dist/index.js b/node_modules/@markdown-confluence/mermaid-electron-renderer/dist/index.js
-index 3eef208..f1ba3a9 100644
+index 3eef208..969c420 100644
 --- a/node_modules/@markdown-confluence/mermaid-electron-renderer/dist/index.js
 +++ b/node_modules/@markdown-confluence/mermaid-electron-renderer/dist/index.js
-@@ -2,6 +2,10 @@ import { BrowserWindow } from "@electron/remote";
+@@ -2,6 +2,12 @@ import { BrowserWindow } from "@electron/remote";
  import mermaid from "mermaid";
  import { v4 as uuidv4 } from "uuid";
  let mermaidRenderHtml;
@@ -10,10 +10,12 @@ index 3eef208..f1ba3a9 100644
 +const DEFAULT_CAPTURE_PADDING = 32;
 +const EXTRA_BOTTOM_PADDING = 24;
 +const IMAGE_SCALE_FACTOR = 2;
++const MIN_OUTPUT_WIDTH = 700;
++const MAX_OUTPUT_WIDTH = 900;
  const pluginMermaidConfig = {
      theme: "base",
      themeVariables: {
-@@ -45,6 +49,13 @@ export class ElectronMermaidRenderer {
+@@ -45,6 +51,13 @@ export class ElectronMermaidRenderer {
                  height: 600,
                  show: debug,
                  frame: debug,
@@ -27,7 +29,7 @@ index 3eef208..f1ba3a9 100644
              });
              if (debug) {
                  chartWindow.webContents.openDevTools();
-@@ -59,14 +70,26 @@ export class ElectronMermaidRenderer {
+@@ -59,14 +72,30 @@ export class ElectronMermaidRenderer {
              const { svg } = await mermaid.render(id, chart.data);
              // Render the chart and get the dimensions
              const dimensions = await chartWindow.webContents.executeJavaScript(`renderSvg(${JSON.stringify(svg)});`);
@@ -50,17 +52,21 @@ index 3eef208..f1ba3a9 100644
 -                // Convert the NativeImage to a PNG buffer
 -                const imageBuffer = image.toPNG();
 +                const image = await chartWindow.webContents.capturePage(captureRegion, { stayHidden: true, stayAwake: true });
-+                // Upscale for sharper output without affecting capture bounds
++                // Scale the exported bitmap so it fills Confluence's body width without overflowing
++                const scaledWidthTarget = safeWidth * IMAGE_SCALE_FACTOR;
++                const boundedWidth = Math.max(MIN_CAPTURE_DIMENSION, Math.round(Math.min(MAX_OUTPUT_WIDTH, Math.max(scaledWidthTarget, MIN_OUTPUT_WIDTH))));
++                const aspectRatio = safeHeight / safeWidth || 1;
++                const boundedHeight = Math.max(MIN_CAPTURE_DIMENSION, Math.round(boundedWidth * aspectRatio));
 +                const scaledImage = image.resize({
-+                    width: Math.max(1, safeWidth * IMAGE_SCALE_FACTOR),
-+                    height: Math.max(1, safeHeight * IMAGE_SCALE_FACTOR),
++                    width: boundedWidth,
++                    height: boundedHeight,
 +                    quality: "best",
 +                });
 +                const imageBuffer = scaledImage.toPNG();
                  // Add the buffer to the capturedCharts map
                  capturedCharts.set(chart.name, imageBuffer);
                  // Resolve the promise
-@@ -96,20 +119,121 @@ export class ElectronMermaidRenderer {
+@@ -96,20 +125,121 @@ export class ElectronMermaidRenderer {
      <title>Mermaid Chart</title>
  	${styleSheetTags}
  	${extraStylesTag}
@@ -192,17 +198,17 @@ index 3eef208..f1ba3a9 100644
  	</script>
    </body>
  </html>
-@@ -121,4 +245,3 @@ export class ElectronMermaidRenderer {
+@@ -121,4 +251,3 @@ export class ElectronMermaidRenderer {
          return new Blob([bytes], { type: "text/html" });
      }
  }
 -//# sourceMappingURL=data:application/json;base64,eyJ2ZXJzaW9uIjozLCJmaWxlIjoiaW5kZXguanMiLCJzb3VyY2VSb290IjoiIiwic291cmNlcyI6WyIuLi9zcmMvaW5kZXgudHMiXSwibmFtZXMiOltdLCJtYXBwaW5ncyI6IkFBQUEsT0FBTyxFQUFFLGFBQWEsRUFBRSxNQUFNLGtCQUFrQixDQUFDO0FBRWpELE9BQU8sT0FBMEIsTUFBTSxTQUFTLENBQUM7QUFDakQsT0FBTyxFQUFFLEVBQUUsSUFBSSxNQUFNLEVBQUUsTUFBTSxNQUFNLENBQUM7QUFFcEMsSUFBSSxpQkFBeUIsQ0FBQztBQUU5QixNQUFNLG1CQUFtQixHQUFHO0lBQzNCLEtBQUssRUFBRSxNQUFNO0lBQ2IsY0FBYyxFQUFFO1FBQ2YsVUFBVSxFQUFFLFNBQVM7UUFDckIsT0FBTyxFQUFFLFNBQVM7UUFDbEIsWUFBWSxFQUFFLFNBQVM7UUFDdkIsZ0JBQWdCLEVBQUUsU0FBUztRQUMzQixrQkFBa0IsRUFBRSxTQUFTO1FBQzdCLGNBQWMsRUFBRSxTQUFTO1FBQ3pCLGtCQUFrQixFQUFFLFNBQVM7UUFDN0Isb0JBQW9CLEVBQUUsU0FBUztRQUMvQixhQUFhLEVBQUUsU0FBUztRQUN4QixpQkFBaUIsRUFBRSxTQUFTO1FBQzVCLG1CQUFtQixFQUFFLFNBQVM7UUFDOUIsWUFBWSxFQUFFLFNBQVM7UUFDdkIsYUFBYSxFQUFFLFNBQVM7UUFDeEIsU0FBUyxFQUFFLFNBQVM7UUFDcEIsVUFBVSxFQUFFLFNBQVM7S0FDckI7Q0FDRCxDQUFDO0FBRUYsTUFBTSxPQUFPLHVCQUF1QjtJQUUxQjtJQUNBO0lBQ0E7SUFDQTtJQUpULFlBQ1MsZ0JBQTBCLEVBQzFCLFdBQXFCLEVBQ3JCLGdCQUErQixtQkFBbUIsRUFDbEQsY0FBYyxFQUFFO1FBSGhCLHFCQUFnQixHQUFoQixnQkFBZ0IsQ0FBVTtRQUMxQixnQkFBVyxHQUFYLFdBQVcsQ0FBVTtRQUNyQixrQkFBYSxHQUFiLGFBQWEsQ0FBcUM7UUFDbEQsZ0JBQVcsR0FBWCxXQUFXLENBQUs7SUFDdEIsQ0FBQztJQUVKLEtBQUssQ0FBQyxvQkFB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RSxFQUFFLENBQ1AsZUFBZSxHQUFHLHNDQUFzQyxDQUN6RDthQUNBLElBQUksQ0FBQyxJQUFJLENBQUMsQ0FBQztRQUNiLE1BQU0sY0FBYyxHQUFHOztJQUVyQixXQUFXLENBQUMsSUFBSSxDQUFDLElBQUksQ0FBQztXQUNmLENBQUM7UUFFVixNQUFNLFlBQVksR0FBRzs7Ozs7O0dBTXBCLGNBQWM7R0FDZCxjQUFjOztpQkFFQSxXQUFXOzs7Ozs7Ozs7Ozs7Ozs7O0NBZ0IzQixDQUFDO1FBRUEsTUFBTSxLQUFLLEdBQUcsSUFBSSxVQUFVLENBQUMsWUFBWSxDQUFDLE1BQU0sQ0FBQyxDQUFDO1FBQ2xELEtBQUssSUFBSSxDQUFDLEdBQUcsQ0FBQyxFQUFFLENBQUMsR0FBRyxZQUFZLENBQUMsTUFBTSxFQUFFLENBQUMsRUFBRSxFQUFFO1lBQzdDLEtBQUssQ0FBQyxDQUFDLENBQUMsR0FBRyxZQUFZLENBQUMsVUFBVSxDQUFDLENBQUMsQ0FBQyxDQUFDO1NBQ3RDO1FBQ0QsT0FBTyxJQUFJLElBQUksQ0FBQyxDQUFDLEtBQUssQ0FBQyxFQUFFLEVBQUUsSUFBSSxFQUFFLFdBQVcsRUFBRSxDQUFDLENBQUM7SUFDakQsQ0FBQztDQUNEIiwic291cmNlc0NvbnRlbnQiOlsiaW1wb3J0IHsgQnJvd3NlcldpbmRvdyB9IGZyb20gXCJAZWxlY3Ryb24vcmVtb3RlXCI7XG5pbXBvcnQgeyBDaGFydERhdGEsIE1lcm1haWRSZW5kZXJlciB9IGZyb20gXCJAbWFya2Rvd24tY29uZmx1ZW5jZS9saWJcIjtcbmltcG9ydCBtZXJtYWlkLCB7IE1lcm1haWRDb25maWcgfSBmcm9tIFwibWVybWFpZFwiO1xuaW1wb3J0IHsgdjQgYXMgdXVpZHY0IH0gZnJvbSBcInV1aWRcIjtcblxubGV0IG1lcm1haWRSZW5kZXJIdG1sOiBzdHJpbmc7XG5cbmNvbnN0IHBsdWdpbk1lcm1haWRDb25maWcgPSB7XG5cdHRoZW1lOiBcImJhc2VcIixcblx0dGhlbWVWYXJpYWJsZXM6IHtcblx0XHRiYWNrZ3JvdW5kOiBcIiNmZmZmZmZcIixcblx0XHRtYWluQmtnOiBcIiNkZGViZmZcIixcblx0XHRwcmltYXJ5Q29sb3I6IFwiI2RkZWJmZlwiLFxuXHRcdHByaW1hcnlUZXh0Q29sb3I6IFwiIzE5MmI1MFwiLFxuXHRcdHByaW1hcnlCb3JkZXJDb2xvcjogXCIjMDA1MmNjXCIsXG5cdFx0c2Vjb25kYXJ5Q29sb3I6IFwiI2ZmOGY3M1wiLFxuXHRcdHNlY29uZGFyeVRleHRDb2xvcjogXCIjMTkyYjUwXCIsXG5cdFx0c2Vjb25kYXJ5Qm9yZGVyQ29sb3I6IFwiI2RmMzYwY1wiLFxuXHRcdHRlcnRpYXJ5Q29sb3I6IFwiI2MwYjZmM1wiLFxuXHRcdHRlcnRpYXJ5VGV4dENvbG9yOiBcIiNmZWZlZmVcIixcblx0XHR0ZXJ0aWFyeUJvcmRlckNvbG9yOiBcIiM1MjQzYWFcIixcblx0XHRub3RlQmtnQ29sb3I6IFwiI2ZmYzQwM1wiLFxuXHRcdG5vdGVUZXh0Q29sb3I6IFwiIzE4MmE0ZVwiLFxuXHRcdHRleHRDb2xvcjogXCIjZmYwMDAwXCIsXG5cdFx0dGl0bGVDb2xvcjogXCIjMDA1MmNjXCIsXG5cdH0sXG59O1xuXG5leHBvcnQgY2xhc3MgRWxlY3Ryb25NZXJtYWlkUmVuZGVyZXIgaW1wbGVtZW50cyBNZXJtYWlkUmVuZGVyZXIge1xuXHRjb25zdHJ1Y3Rvcihcblx0XHRwcml2YXRlIGV4dHJhU3R5bGVTaGVldHM6IHN0cmluZ1tdLFxuXHRcdHByaXZhdGUgZXh0cmFTdHlsZXM6IHN0cmluZ1tdLFxuXHRcdHByaXZhdGUgbWVybWFpZENvbmZpZzogTWVybWFpZENvbmZpZyA9IHBsdWdpbk1lcm1haWRDb25maWcsXG5cdFx0cHJpdmF0ZSBib2R5Q2xhc3NlcyA9IFwiXCIsXG5cdCkge31cblxuXHRhc3luYyBjYXB0dXJlTWVybWFpZENoYXJ0cyhcblx0XHRjaGFydHM6IENoYXJ0RGF0YVtdLFxuXHQpOiBQcm9taXNlPE1hcDxzdHJpbmcsIEJ1ZmZlcj4+IHtcblx0XHRpZiAoIW1lcm1haWRSZW5kZXJIdG1sKSB7XG5cdFx0XHRtZXJtYWlkUmVuZGVySHRtbCA9IFVSTC5jcmVhdGVPYmplY3RVUkwoXG5cdFx0XHRcdHRoaXMuZ2V0RmlsZUNvbnRlbnRCbG9iKFxuXHRcdFx0XHRcdHRoaXMuZXh0cmFTdHlsZVNoZWV0cyxcblx0XHRcdFx0XHR0aGlzLmV4dHJhU3R5bGVzLFxuXHRcdFx0XHRcdHRoaXMuYm9keUNsYXNzZXMsXG5cdFx0XHRcdCksXG5cdFx0XHQpO1xuXHRcdH1cblxuXHRcdGNvbnN0IGNhcHR1cmVkQ2hhcnRzID0gbmV3IE1hcDxzdHJpbmcsIEJ1ZmZlcj4oKTtcblxuXHRcdGNvbnN0IHByb21pc2VzID0gY2hhcnRzLm1hcChhc3luYyAoY2hhcnQpID0+IHtcblx0XHRcdGNvbnN0IGRlYnVnID0gZmFsc2U7XG5cblx0XHRcdGNvbnN0IGNoYXJ0V2luZG93ID0gbmV3IEJyb3dzZXJXaW5kb3coe1xuXHRcdFx0XHR3aWR0aDogODAwLFxuXHRcdFx0XHRoZWlnaHQ6IDYwMCxcblx0XHRcdFx0c2hvdzogZGVidWcsXG5cdFx0XHRcdGZyYW1lOiBkZWJ1Zyxcblx0XHRcdH0pO1xuXG5cdFx0XHRpZiAoZGVidWcpIHtcblx0XHRcdFx0Y2hhcnRXaW5kb3cud2ViQ29udGVudHMub3BlbkRldlRvb2xzKCk7XG5cdFx0XHR9XG5cblx0XHRcdGF3YWl0IGNoYXJ0V2luZG93LmxvYWRVUkwobWVybWFpZFJlbmRlckh0bWwpO1xuXG5cdFx0XHRjb25zdCB7IHRoZW1lVmFyaWFibGVzLCAuLi5tZXJtYWlkSW5pdENvbmZpZyB9ID0gdGhpcy5tZXJtYWlkQ29uZmlnO1xuXG5cdFx0XHRtZXJtYWlkLmluaXRpYWxpemUoeyAuLi5tZXJtYWlkSW5pdENvbmZpZywgc3RhcnRPbkxvYWQ6IGZhbHNlIH0pO1xuXG5cdFx0XHRpZiAodGhlbWVWYXJpYWJsZXMpIHtcblx0XHRcdFx0bWVybWFpZC5tZXJtYWlkQVBJLnVwZGF0ZVNpdGVDb25maWcoeyB0aGVtZVZhcmlhYmxlcyB9KTtcblx0XHRcdH1cblxuXHRcdFx0Y29uc3QgaWQgPSBcIm1tXCIgKyB1dWlkdjQoKS5yZXBsYWNlKC8tL2csIFwiXCIpO1xuXHRcdFx0Y29uc3QgeyBzdmcgfSA9IGF3YWl0IG1lcm1haWQucmVuZGVyKGlkLCBjaGFydC5kYXRhKTtcblxuXHRcdFx0Ly8gUmVuZGVyIHRoZSBjaGFydCBhbmQgZ2V0IHRoZSBkaW1lbnNpb25zXG5cdFx0XHRjb25zdCBkaW1lbnNpb25zID0gYXdhaXQgY2hhcnRXaW5kb3cud2ViQ29udGVudHMuZXhlY3V0ZUphdmFTY3JpcHQoXG5cdFx0XHRcdGByZW5kZXJTdmcoJHtKU09OLnN0cmluZ2lmeShzdmcpfSk7YCxcblx0XHRcdCk7XG5cblx0XHRcdC8vIFJlc2l6ZSB0aGUgd2luZG93IHRvIGZpdCB0aGUgY2hhcnQgZGltZW5zaW9uc1xuXHRcdFx0Y29uc3QgeyB3aWR0aCwgaGVpZ2h0IH0gPSBkaW1lbnNpb25zO1xuXHRcdFx0Y2hhcnRXaW5kb3cuc2V0U2l6ZSh3aWR0aCwgaGVpZ2h0KTtcblxuXHRcdFx0dHJ5IHtcblx0XHRcdFx0Ly8gQ2FwdHVyZSB0aGUgY2hhcnQgYXMgYSBOYXRpdmVJbWFnZVxuXHRcdFx0XHRjb25zdCBpbWFnZSA9IGF3YWl0IGNoYXJ0V2luZG93LndlYkNvbnRlbnRzLmNhcHR1cmVQYWdlKFxuXHRcdFx0XHRcdGRpbWVuc2lvbnMsXG5cdFx0XHRcdFx0eyBzdGF5SGlkZGVuOiB0cnVlLCBzdGF5QXdha2U6IHRydWUgfSxcblx0XHRcdFx0KTtcblx0XHRcdFx0Ly8gQ29udmVydCB0aGUgTmF0aXZlSW1hZ2UgdG8gYSBQTkcgYnVmZmVyXG5cdFx0XHRcdGNvbnN0IGltYWdlQnVmZmVyID0gaW1hZ2UudG9QTkcoKTtcblx0XHRcdFx0Ly8gQWRkIHRoZSBidWZmZXIgdG8gdGhlIGNhcHR1cmVkQ2hhcnRzIG1hcFxuXHRcdFx0XHRjYXB0dXJlZENoYXJ0cy5zZXQoY2hhcnQubmFtZSwgaW1hZ2VCdWZmZXIpO1xuXHRcdFx0XHQvLyBSZXNvbHZlIHRoZSBwcm9taXNlXG5cdFx0XHR9IGZpbmFsbHkge1xuXHRcdFx0XHRpZiAoIWRlYnVnKSB7XG5cdFx0XHRcdFx0Y2hhcnRXaW5kb3cuY2xvc2UoKTtcblx0XHRcdFx0fVxuXHRcdFx0fVxuXHRcdH0pO1xuXG5cdFx0YXdhaXQgUHJvbWlzZS5hbGwocHJvbWlzZXMpO1xuXHRcdHJldHVybiBjYXB0dXJlZENoYXJ0cztcblx0fVxuXG5cdGdldEZpbGVDb250ZW50QmxvYihcblx0XHRleHRyYVN0eWxlU2hlZXRzOiBzdHJpbmdbXSxcblx0XHRleHRyYVN0eWxlczogc3RyaW5nW10sXG5cdFx0Ym9keUNsYXNzZXM6IHN0cmluZyxcblx0KTogQmxvYiB7XG5cdFx0Y29uc3Qgc3R5bGVTaGVldFRhZ3MgPSBleHRyYVN0eWxlU2hlZXRzXG5cdFx0XHQubWFwKFxuXHRcdFx0XHQodXJsKSA9PlxuXHRcdFx0XHRcdGA8bGluayBocmVmPVwiJHt1cmx9XCIgdHlwZT1cInRleHQvY3NzXCIgcmVsPVwic3R5bGVzaGVldFwiLz5gLFxuXHRcdFx0KVxuXHRcdFx0LmpvaW4oXCJcXG5cIik7XG5cdFx0Y29uc3QgZXh0cmFTdHlsZXNUYWcgPSBgXG5cdFx0PHN0eWxlPlxuXHRcdCR7ZXh0cmFTdHlsZXMuam9pbihcIlxcblwiKX1cblx0XHQ8L3N0eWxlPmA7XG5cblx0XHRjb25zdCBmaWxlQ29udGVudHMgPSBgXG48IURPQ1RZUEUgaHRtbD5cbjxodG1sPlxuICA8aGVhZD5cbiAgICA8bWV0YSBjaGFyc2V0PVwiVVRGLThcIiAvPlxuICAgIDx0aXRsZT5NZXJtYWlkIENoYXJ0PC90aXRsZT5cblx0JHtzdHlsZVNoZWV0VGFnc31cblx0JHtleHRyYVN0eWxlc1RhZ31cbiAgPC9oZWFkPlxuICA8Ym9keSBjbGFzcz1cIiR7Ym9keUNsYXNzZXN9XCI+XG4gIFx0PGRpdiBpZD1cImdyYXBoRGl2XCI+PC9kaXY+XG4gICAgPHNjcmlwdCB0eXBlPVwidGV4dC9qYXZhc2NyaXB0XCI+XG5cdHdpbmRvdy5yZW5kZXJTdmcgPSAoc3ZnKSA9PiB7XG4gICAgICAgIGNvbnN0IGNoYXJ0RWxlbWVudCA9IGRvY3VtZW50LnF1ZXJ5U2VsZWN0b3IoXCIjZ3JhcGhEaXZcIik7XG4gICAgICAgIGNoYXJ0RWxlbWVudC5pbm5lckhUTUwgPSBzdmc7XG4gICAgXG4gICAgICAgIGNvbnN0IHN2Z0VsZW1lbnQgPSBkb2N1bWVudC5xdWVyeVNlbGVjdG9yKFwiI2dyYXBoRGl2IHN2Z1wiKTtcbiAgICAgICAgcmV0dXJuIHtcbiAgICAgICAgICAgIHdpZHRoOiBzdmdFbGVtZW50LnNjcm9sbFdpZHRoLFxuICAgICAgICAgICAgaGVpZ2h0OiBzdmdFbGVtZW50LnNjcm9sbEhlaWdodCxcbiAgICAgICAgfTtcbiAgICB9XG5cdDwvc2NyaXB0PlxuICA8L2JvZHk+XG48L2h0bWw+XG5gO1xuXG5cdFx0Y29uc3QgYnl0ZXMgPSBuZXcgVWludDhBcnJheShmaWxlQ29udGVudHMubGVuZ3RoKTtcblx0XHRmb3IgKGxldCBpID0gMDsgaSA8IGZpbGVDb250ZW50cy5sZW5ndGg7IGkrKykge1xuXHRcdFx0Ynl0ZXNbaV0gPSBmaWxlQ29udGVudHMuY2hhckNvZGVBdChpKTtcblx0XHR9XG5cdFx0cmV0dXJuIG5ldyBCbG9iKFtieXRlc10sIHsgdHlwZTogXCJ0ZXh0L2h0bWxcIiB9KTtcblx0fVxufVxuIl19
 \ No newline at end of file
 diff --git a/node_modules/@markdown-confluence/mermaid-electron-renderer/src/index.ts b/node_modules/@markdown-confluence/mermaid-electron-renderer/src/index.ts
-index 2cd4f2e..ee67079 100644
+index 2cd4f2e..6dadfca 100644
 --- a/node_modules/@markdown-confluence/mermaid-electron-renderer/src/index.ts
 +++ b/node_modules/@markdown-confluence/mermaid-electron-renderer/src/index.ts
-@@ -5,6 +5,12 @@ import { v4 as uuidv4 } from "uuid";
+@@ -5,6 +5,14 @@ import { v4 as uuidv4 } from "uuid";
  
  let mermaidRenderHtml: string;
  
@@ -210,12 +216,14 @@ index 2cd4f2e..ee67079 100644
 +const DEFAULT_CAPTURE_PADDING = 32;
 +const EXTRA_BOTTOM_PADDING = 24;
 +const IMAGE_SCALE_FACTOR = 2;
++const MIN_OUTPUT_WIDTH = 700;
++const MAX_OUTPUT_WIDTH = 900;
 +
 +
  const pluginMermaidConfig = {
  	theme: "base",
  	themeVariables: {
-@@ -57,6 +63,13 @@ export class ElectronMermaidRenderer implements MermaidRenderer {
+@@ -57,6 +65,13 @@ export class ElectronMermaidRenderer implements MermaidRenderer {
  				height: 600,
  				show: debug,
  				frame: debug,
@@ -229,7 +237,7 @@ index 2cd4f2e..ee67079 100644
  			});
  
  			if (debug) {
-@@ -77,22 +90,42 @@ export class ElectronMermaidRenderer implements MermaidRenderer {
+@@ -77,22 +92,57 @@ export class ElectronMermaidRenderer implements MermaidRenderer {
  			const { svg } = await mermaid.render(id, chart.data);
  
  			// Render the chart and get the dimensions
@@ -271,17 +279,32 @@ index 2cd4f2e..ee67079 100644
  				);
 -				// Convert the NativeImage to a PNG buffer
 -				const imageBuffer = image.toPNG();
-+				// Upscale for sharper output without affecting capture bounds
++				// Scale the exported bitmap so it fills Confluence's body width without overflowing
++				const scaledWidthTarget = safeWidth * IMAGE_SCALE_FACTOR;
++				const boundedWidth = Math.max(
++					MIN_CAPTURE_DIMENSION,
++					Math.round(
++						Math.min(
++							MAX_OUTPUT_WIDTH,
++							Math.max(scaledWidthTarget, MIN_OUTPUT_WIDTH),
++						),
++					),
++				);
++				const aspectRatio = safeHeight / safeWidth || 1;
++				const boundedHeight = Math.max(
++					MIN_CAPTURE_DIMENSION,
++					Math.round(boundedWidth * aspectRatio),
++				);
 +				const scaledImage = image.resize({
-+					width: Math.max(1, safeWidth * IMAGE_SCALE_FACTOR),
-+					height: Math.max(1, safeHeight * IMAGE_SCALE_FACTOR),
++					width: boundedWidth,
++					height: boundedHeight,
 +					quality: "best",
 +				});
 +				const imageBuffer = scaledImage.toPNG();
  				// Add the buffer to the capturedCharts map
  				capturedCharts.set(chart.name, imageBuffer);
  				// Resolve the promise
-@@ -131,20 +164,121 @@ export class ElectronMermaidRenderer implements MermaidRenderer {
+@@ -131,20 +181,121 @@ export class ElectronMermaidRenderer implements MermaidRenderer {
      <title>Mermaid Chart</title>
  	${styleSheetTags}
  	${extraStylesTag}
